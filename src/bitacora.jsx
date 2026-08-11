@@ -445,3 +445,4 @@ function MultiFollowerChart({ entries }) {
     </div>
   );
 }
+export default Bitacora;
