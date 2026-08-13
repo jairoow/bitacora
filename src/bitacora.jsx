@@ -2264,3 +2264,4 @@ export default function App() {
     </ThemeContext.Provider>
   );
 }
+export default Bitacora;
