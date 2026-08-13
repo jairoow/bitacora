@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, createContext, useContext } from "react";
+import React, { useState, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine
@@ -117,14 +117,18 @@ function getMonthMatrix(iso) {
 const fmtMoney = (n) => (n < 0 ? "-" : "") + "€" + Math.abs(n).toLocaleString("es-ES", { maximumFractionDigits: 2 });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-async function waitForStorage(maxTries = 40) {
-  for (let i = 0; i < maxTries; i++) {
-    if (typeof window !== "undefined" && window.storage) return true;
-    await new Promise((r) => setTimeout(r, 125));
-  }
-  return !!(typeof window !== "undefined" && window.storage);
+const STORAGE_PREFIX = "bitacora:";
+function loadLocal(key) {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_PREFIX + key);
+    return raw == null ? undefined : JSON.parse(raw);
+  } catch (e) { return undefined; }
 }
-const PUBLISH_HINT = "No se ha guardado. Esta bitácora tiene que estar publicada para poder guardar datos: abre el menú ⋯ del artifact y pulsa «Publish» — luego prueba de nuevo.";
+function saveLocal(key, data) {
+  try { window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(data)); return true; }
+  catch (e) { return false; }
+}
+const SAVE_ERROR_HINT = "No se ha podido guardar. Puede que el almacenamiento del navegador esté lleno o bloqueado.";
 
 /* =========================================================
    Constantes de dominio
@@ -2132,46 +2136,28 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [diaryPrefill, setDiaryPrefill] = useState(null);
-  const storageOkRef = useRef(false);
-
   useEffect(() => {
-    (async () => {
-      const ok = await waitForStorage();
-      storageOkRef.current = ok;
-      if (!ok) { setSaveError("El almacenamiento no está disponible en este momento. Tus datos no se guardarán entre sesiones."); setReady(true); return; }
-      try {
-        const keys = ["weight-entries", "finance-entries", "social-entries", "habit-items", "journal-entries", "goals", "recurring-expenses", "finance-categories", "custom-measurement-fields", "weight-goal", "measurement-goals", "settings", "networth-entries", "savings-goal", "follower-goals"];
-        const results = await Promise.allSettled(keys.map((k) => window.storage.get(k, false)));
-        const val = (i) => (results[i].status === "fulfilled" && results[i].value) ? JSON.parse(results[i].value.value) : undefined;
-        if (val(0) !== undefined) setWeightEntries(val(0));
-        if (val(1) !== undefined) setFinanceEntries(val(1));
-        if (val(2) !== undefined) setSocialEntries(val(2));
-        if (val(3) !== undefined) setHabitItems(val(3));
-        if (val(4) !== undefined) setJournalEntries(val(4));
-        if (val(5) !== undefined) setGoals(val(5));
-        if (val(6) !== undefined) setRecurringExpenses(val(6));
-        if (val(7) !== undefined) setFinanceCategories(val(7));
-        if (val(8) !== undefined) setCustomFields(val(8));
-        if (val(9) !== undefined) setWeightGoal(val(9));
-        if (val(10) !== undefined) setMeasurementGoals(val(10));
-        if (val(11) !== undefined) { const s = val(11); setSettings({ ...DEFAULT_SETTINGS, ...s, widgets: { ...DEFAULT_WIDGETS, ...(s.widgets || {}) } }); }
-        if (val(12) !== undefined) setNetworthEntries(val(12));
-        if (val(13) !== undefined) setSavingsGoalState(val(13));
-        if (val(14) !== undefined) setFollowerGoalsState(val(14));
-      } catch (e) {
-        // primer uso — todavía sin datos guardados
-      } finally {
-        setReady(true);
-      }
-    })();
+    const val = loadLocal("weight-entries"); if (val !== undefined) setWeightEntries(val);
+    const fin = loadLocal("finance-entries"); if (fin !== undefined) setFinanceEntries(fin);
+    const soc = loadLocal("social-entries"); if (soc !== undefined) setSocialEntries(soc);
+    const hab = loadLocal("habit-items"); if (hab !== undefined) setHabitItems(hab);
+    const jour = loadLocal("journal-entries"); if (jour !== undefined) setJournalEntries(jour);
+    const g = loadLocal("goals"); if (g !== undefined) setGoals(g);
+    const rec = loadLocal("recurring-expenses"); if (rec !== undefined) setRecurringExpenses(rec);
+    const cat = loadLocal("finance-categories"); if (cat !== undefined) setFinanceCategories(cat);
+    const cus = loadLocal("custom-measurement-fields"); if (cus !== undefined) setCustomFields(cus);
+    const wg = loadLocal("weight-goal"); if (wg !== undefined) setWeightGoal(wg);
+    const mg = loadLocal("measurement-goals"); if (mg !== undefined) setMeasurementGoals(mg);
+    const s = loadLocal("settings"); if (s !== undefined) setSettings({ ...DEFAULT_SETTINGS, ...s, widgets: { ...DEFAULT_WIDGETS, ...(s.widgets || {}) } });
+    const net = loadLocal("networth-entries"); if (net !== undefined) setNetworthEntries(net);
+    const sg = loadLocal("savings-goal"); if (sg !== undefined) setSavingsGoalState(sg);
+    const fg = loadLocal("follower-goals"); if (fg !== undefined) setFollowerGoalsState(fg);
+    setReady(true);
   }, []);
 
-  const persist = useCallback(async (key, data) => {
-    if (!storageOkRef.current) { const ok = await waitForStorage(10); storageOkRef.current = ok; if (!ok) { setSaveError(PUBLISH_HINT); return; } }
-    try {
-      const res = await window.storage.set(key, JSON.stringify(data), false);
-      if (!res) setSaveError(PUBLISH_HINT); else setSaveError("");
-    } catch (e) { setSaveError(PUBLISH_HINT); }
+  const persist = useCallback((key, data) => {
+    const ok = saveLocal(key, data);
+    setSaveError(ok ? "" : SAVE_ERROR_HINT);
   }, []);
 
   const addWeight = (entry) => { const next = [...weightEntries, entry].sort((a, b) => a.date.localeCompare(b.date)); setWeightEntries(next); persist("weight-entries", next); };
@@ -2237,10 +2223,6 @@ export default function App() {
         <style>{FONTS}</style>
         <div style={{ maxWidth: 880, margin: "0 auto", padding: "24px 16px 110px" }}>
           <Header onSearchClick={() => setSearchOpen(true)} />
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
-            <span style={{ width: 4, height: 4, borderRadius: 2, background: tokens.textFaint, flexShrink: 0 }} />
-            <span className="font-body" style={{ fontSize: 11, color: tokens.textFaint, lineHeight: 1.4 }}>Para que tus datos se guarden entre visitas, publica esta bitácora la primera vez (menú ⋯ → «Publish»).</span>
-          </div>
           {saveError && (<div className="font-body" style={{ marginTop: 14, padding: "10px 14px", background: "rgba(255,92,122,0.1)", border: `1px solid ${DOMAIN.danger}`, borderRadius: 10, color: DOMAIN.danger, fontSize: 12.5, lineHeight: 1.5 }}>{saveError}</div>)}
 
           <div key={activeTab} className="tab-content-enter" style={{ marginTop: 20 }}>
@@ -2264,4 +2246,3 @@ export default function App() {
     </ThemeContext.Provider>
   );
 }
-export default Bitacora;
