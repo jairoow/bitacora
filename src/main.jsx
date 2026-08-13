@@ -1,8 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import App from "./bitacora.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <h1 style={{ padding: "40px", fontFamily: "Arial" }}>
-    FUNCIONA
-  </h1>
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 );
